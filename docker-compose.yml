@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14.7
+    container_name: recipe-api-postgres
+    environment:
+      POSTGRES_DB: recipe_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - recipe-api-network
+
+volumes:
+  pgdata:
+
+networks:
+  recipe-api-network:
