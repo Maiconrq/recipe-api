@@ -240,7 +240,7 @@ class RecipeServiceTest {
         when(recipeRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(recipe));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2);
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2, null, null, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTitle()).isEqualTo("Vegetarian");
@@ -254,7 +254,7 @@ class RecipeServiceTest {
         when(recipeRepository.findAll(nullable(Specification.class)))
                 .thenReturn(List.of(recipe1, recipe2));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null);
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, null, null);
 
         assertThat(result).hasSize(2);
         assertThat(result).extracting(RecipeResponseDTO::getId).containsExactlyInAnyOrder(1L, 2L);
@@ -268,7 +268,7 @@ class RecipeServiceTest {
         when(recipeRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(recipe));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, null);
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, null, null, null, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).isVegetarian()).isTrue();
@@ -282,7 +282,7 @@ class RecipeServiceTest {
         when(recipeRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(recipe));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, 2);
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, 2, null, null, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getServings()).isEqualTo(2);
@@ -294,10 +294,80 @@ class RecipeServiceTest {
         when(recipeRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of());
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2);
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2, null, null, null);
 
         assertThat(result).isEmpty();
         verify(recipeRepository).findAll(any(Specification.class));
+    }
+
+    @Test
+    void should_ReturnRecipes_When_IncludeIngredientsFilterProvided() {
+        Recipe recipe = Recipe.builder()
+                .id(1L)
+                .title("Tomato Pasta")
+                .ingredients(List.of("Tomato", "Pasta", "Salt"))
+                .build();
+
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(recipe));
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, List.of("Tomato"), null, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getTitle()).isEqualTo("Tomato Pasta");
+    }
+
+    @Test
+    void should_ExcludeRecipes_When_ExcludeIngredientsFilterProvided() {
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of());
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, List.of("Rice"), null);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void should_ReturnRecipes_When_InstructionContainsKeyword() {
+        Recipe recipe = Recipe.builder()
+                .id(1L)
+                .title("Boil Pasta")
+                .instructions("Boil water and add pasta.")
+                .build();
+
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(recipe));
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, null, "boil");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getInstructions()).containsIgnoringCase("boil");
+    }
+
+    @Test
+    void should_ReturnRecipes_When_AllFiltersCombined() {
+        Recipe recipe = Recipe.builder()
+                .id(1L)
+                .title("Veggie Dish")
+                .ingredients(List.of("Tomato", "Onion"))
+                .instructions("Cook all ingredients slowly.")
+                .vegetarian(true)
+                .servings(3)
+                .build();
+
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(recipe));
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(
+                true,
+                3,
+                List.of("Tomato"),
+                List.of("Meat"),
+                "cook"
+        );
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getTitle()).isEqualTo("Veggie Dish");
     }
 
 }

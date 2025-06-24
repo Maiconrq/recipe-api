@@ -46,9 +46,18 @@ public class RecipeController {
     @GetMapping
     public ResponseEntity<List<RecipeResponseDTO>> getRecipes(
             @RequestParam(required = false) Boolean vegetarian,
-            @RequestParam(required = false) Integer servings) {
+            @RequestParam(required = false) Integer servings,
+            @RequestParam(required = false) List<String> includeIngredients,
+            @RequestParam(required = false) List<String> excludeIngredients,
+            @RequestParam(required = false) String instruction) {
 
-        List<RecipeResponseDTO> recipes = recipeService.getRecipesByFilters(vegetarian, servings);
+        List<RecipeResponseDTO> recipes = recipeService.getRecipesByFilters(
+                vegetarian,
+                servings,
+                includeIngredients,
+                excludeIngredients,
+                instruction
+        );
         return ResponseEntity.ok(recipes);
     }
 

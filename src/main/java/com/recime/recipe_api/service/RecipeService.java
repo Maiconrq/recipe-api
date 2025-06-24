@@ -13,8 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static com.recime.recipe_api.specification.RecipeSpecifications.hasVegetarian;
-import static com.recime.recipe_api.specification.RecipeSpecifications.hasServings;
+import static com.recime.recipe_api.specification.RecipeSpecifications.*;
 
 @Service
 public class RecipeService {
@@ -40,15 +39,27 @@ public class RecipeService {
         return mapToResponseDTO(savedRecipe);
     }
 
-    public List<RecipeResponseDTO> getRecipesByFilters(Boolean vegetarian, Integer servings) {
-        Specification<Recipe> spec = null;
+    public List<RecipeResponseDTO> getRecipesByFilters(Boolean vegetarian, Integer servings, List<String> includeIngredients, List<String> excludeIngredients, String instruction) {
+        Specification<Recipe> spec = (root, query, cb) -> cb.conjunction();
 
         if (vegetarian != null) {
-            spec = hasVegetarian(vegetarian);
+            spec = spec.and(hasVegetarian(vegetarian));
         }
 
         if (servings != null) {
-            spec = (spec == null) ? hasServings(servings) : spec.and(hasServings(servings));
+            spec = spec.and(hasServings(servings));
+        }
+
+        if (includeIngredients != null && !includeIngredients.isEmpty()) {
+            spec = spec.and(hasIngredientsInclude(includeIngredients));
+        }
+
+        if (excludeIngredients != null && !excludeIngredients.isEmpty()) {
+            spec = spec.and(hasIngredientsExclude(excludeIngredients));
+        }
+
+        if (instruction != null && !instruction.isBlank()) {
+            spec = spec.and(hasInstructionContaining(instruction));
         }
 
         return recipeRepository.findAll(spec).stream()
@@ -85,7 +96,6 @@ public class RecipeService {
         }
         recipeRepository.deleteById(id);
     }
-
 
     private RecipeResponseDTO mapToResponseDTO(Recipe recipe) {
         return RecipeResponseDTO.builder()
