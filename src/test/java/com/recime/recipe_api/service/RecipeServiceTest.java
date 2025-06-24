@@ -63,6 +63,41 @@ class RecipeServiceTest {
     }
 
     @Test
+    void should_ThrowException_When_TitleIsNull() {
+        RecipeCreateDTO dto = RecipeCreateDTO.builder()
+                .title(null)
+                .description("Description")
+                .ingredients(List.of("Ingredient 1"))
+                .instructions("Instructions")
+                .vegetarian(true)
+                .servings(2)
+                .build();
+
+        assertThatThrownBy(() -> recipeService.createRecipe(dto))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void should_ThrowException_When_RepositoryFailsOnSave() {
+        RecipeCreateDTO dto = RecipeCreateDTO.builder()
+                .title("Test Recipe")
+                .description("Description")
+                .ingredients(List.of("Ingredient"))
+                .instructions("Instructions")
+                .vegetarian(true)
+                .servings(2)
+                .build();
+
+        when(recipeRepository.save(any(Recipe.class))).thenThrow(new RuntimeException("Database error"));
+
+        assertThatThrownBy(() -> recipeService.createRecipe(dto))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Database error");
+
+        verify(recipeRepository, times(1)).save(any(Recipe.class));
+    }
+
+    @Test
     void should_ReturnRecipe_When_IdExists() {
         Recipe recipe = Recipe.builder().id(1L).title("Test").build();
         when(recipeRepository.findById(1L)).thenReturn(Optional.of(recipe));
@@ -105,6 +140,69 @@ class RecipeServiceTest {
     }
 
     @Test
+    void should_ThrowException_When_SaveFails() {
+        Recipe existingRecipe = Recipe.builder().id(1L).title("Old").build();
+        when(recipeRepository.findById(1L)).thenReturn(Optional.of(existingRecipe));
+
+        RecipeUpdateDTO dto = RecipeUpdateDTO.builder()
+                .title("Updated")
+                .description("Updated Description")
+                .ingredients(List.of("New Ingredient"))
+                .instructions("New Instructions")
+                .vegetarian(false)
+                .servings(3)
+                .build();
+
+        when(recipeRepository.save(any(Recipe.class)))
+                .thenThrow(new RuntimeException("Database error"));
+
+        assertThatThrownBy(() -> recipeService.updateRecipe(1L, dto))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Database error");
+
+        verify(recipeRepository).findById(1L);
+        verify(recipeRepository).save(any(Recipe.class));
+    }
+
+    @Test
+    void should_UpdateRecipe_When_DTOFieldsAreNull() {
+        Recipe existingRecipe = Recipe.builder()
+                .id(1L)
+                .title("Old Title")
+                .description("Old Description")
+                .ingredients(List.of("Old Ingredient"))
+                .instructions("Old Instructions")
+                .vegetarian(true)
+                .servings(5)
+                .build();
+
+        when(recipeRepository.findById(1L)).thenReturn(Optional.of(existingRecipe));
+
+        RecipeUpdateDTO dto = RecipeUpdateDTO.builder()
+                .title(null)
+                .description(null)
+                .ingredients(null)
+                .instructions(null)
+                .vegetarian(false)
+                .servings(null)
+                .build();
+
+        when(recipeRepository.save(any(Recipe.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecipeResponseDTO result = recipeService.updateRecipe(1L, dto);
+
+        assertThat(result.getTitle()).isNull();
+        assertThat(result.getDescription()).isNull();
+        assertThat(result.getIngredients()).isNull();
+        assertThat(result.getInstructions()).isNull();
+        assertThat(result.isVegetarian()).isFalse();
+        assertThat(result.getServings()).isNull();
+
+        verify(recipeRepository).findById(1L);
+        verify(recipeRepository).save(any(Recipe.class));
+    }
+
+    @Test
     void should_DeleteRecipe_When_IdExists() {
         when(recipeRepository.existsById(1L)).thenReturn(true);
 
@@ -123,6 +221,19 @@ class RecipeServiceTest {
     }
 
     @Test
+    void should_PropagateException_When_DeleteFailsInRepository() {
+        when(recipeRepository.existsById(1L)).thenReturn(true);
+        doThrow(new RuntimeException("Database delete error")).when(recipeRepository).deleteById(1L);
+
+        assertThatThrownBy(() -> recipeService.deleteRecipe(1L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Database delete error");
+
+        verify(recipeRepository).existsById(1L);
+        verify(recipeRepository).deleteById(1L);
+    }
+
+    @Test
     void should_ReturnFilteredRecipes_When_FiltersApplied() {
         Recipe recipe = Recipe.builder().id(1L).title("Vegetarian").vegetarian(true).servings(2).build();
 
@@ -134,4 +245,59 @@ class RecipeServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTitle()).isEqualTo("Vegetarian");
     }
+
+    @Test
+    void should_ReturnAllRecipes_When_NoFiltersProvided() {
+        Recipe recipe1 = Recipe.builder().id(1L).title("Recipe 1").build();
+        Recipe recipe2 = Recipe.builder().id(2L).title("Recipe 2").build();
+
+        when(recipeRepository.findAll(nullable(Specification.class)))
+                .thenReturn(List.of(recipe1, recipe2));
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(RecipeResponseDTO::getId).containsExactlyInAnyOrder(1L, 2L);
+        verify(recipeRepository).findAll(nullable(Specification.class));
+    }
+
+    @Test
+    void should_ReturnRecipes_When_OnlyVegetarianFilterProvided() {
+        Recipe recipe = Recipe.builder().id(1L).title("Veg Recipe").vegetarian(true).build();
+
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(recipe));
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).isVegetarian()).isTrue();
+        verify(recipeRepository).findAll(any(Specification.class));
+    }
+
+    @Test
+    void should_ReturnRecipes_When_OnlyServingsFilterProvided() {
+        Recipe recipe = Recipe.builder().id(1L).title("Recipe with 2 servings").servings(2).build();
+
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(recipe));
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, 2);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getServings()).isEqualTo(2);
+        verify(recipeRepository).findAll(any(Specification.class));
+    }
+
+    @Test
+    void should_ReturnEmptyList_When_NoRecipesMatchFilters() {
+        when(recipeRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of());
+
+        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2);
+
+        assertThat(result).isEmpty();
+        verify(recipeRepository).findAll(any(Specification.class));
+    }
+
 }
