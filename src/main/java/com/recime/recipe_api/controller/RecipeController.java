@@ -5,6 +5,10 @@ import com.recime.recipe_api.dto.RecipeResponseDTO;
 import com.recime.recipe_api.dto.RecipeUpdateDTO;
 import com.recime.recipe_api.service.RecipeService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,23 +47,26 @@ public class RecipeController {
         return ResponseEntity.created(location).body(createdRecipe);
     }
 
+    @PostMapping("/bulk")
+    public ResponseEntity<List<RecipeResponseDTO>> createMoreThanOneRecipe(@RequestBody List<RecipeCreateDTO> recipes) {
+        List<RecipeResponseDTO> createdRecipes = recipeService.createMoreThanOneRecipe(recipes);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdRecipes);
+    }
+
     @GetMapping
-    public ResponseEntity<List<RecipeResponseDTO>> getRecipes(
+    public ResponseEntity<Page<RecipeResponseDTO>> getRecipes(
             @RequestParam(required = false) Boolean vegetarian,
             @RequestParam(required = false) Integer servings,
             @RequestParam(required = false) List<String> includeIngredients,
             @RequestParam(required = false) List<String> excludeIngredients,
-            @RequestParam(required = false) String instruction) {
-
-        List<RecipeResponseDTO> recipes = recipeService.getRecipesByFilters(
-                vegetarian,
-                servings,
-                includeIngredients,
-                excludeIngredients,
-                instruction
-        );
+            @RequestParam(required = false) String instruction,
+            @PageableDefault(size = 10, sort = "id") Pageable pageable
+    ) {
+        Page<RecipeResponseDTO> recipes = recipeService.getRecipesByFilters(
+                vegetarian, servings, includeIngredients, excludeIngredients, instruction, pageable);
         return ResponseEntity.ok(recipes);
     }
+
 
     @GetMapping("/{id}")
     public ResponseEntity<RecipeResponseDTO> getRecipeById(@PathVariable Long id) {

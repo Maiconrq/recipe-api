@@ -10,8 +10,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -95,6 +100,64 @@ class RecipeServiceTest {
                 .hasMessageContaining("Database error");
 
         verify(recipeRepository, times(1)).save(any(Recipe.class));
+    }
+    @Test
+    void should_CreateMultipleRecipes_When_ValidInputList() {
+        RecipeCreateDTO dto1 = RecipeCreateDTO.builder()
+                .title("Recipe 1")
+                .description("Desc 1")
+                .ingredients(List.of("Ingredient A"))
+                .instructions("Instr 1")
+                .vegetarian(true)
+                .servings(2)
+                .build();
+
+        RecipeCreateDTO dto2 = RecipeCreateDTO.builder()
+                .title("Recipe 2")
+                .description("Desc 2")
+                .ingredients(List.of("Ingredient B"))
+                .instructions("Instr 2")
+                .vegetarian(false)
+                .servings(4)
+                .build();
+
+        Recipe recipe1 = Recipe.builder().id(1L).title(dto1.getTitle()).description(dto1.getDescription())
+                .ingredients(dto1.getIngredients()).instructions(dto1.getInstructions())
+                .vegetarian(dto1.isVegetarian()).servings(dto1.getServings()).build();
+
+        Recipe recipe2 = Recipe.builder().id(2L).title(dto2.getTitle()).description(dto2.getDescription())
+                .ingredients(dto2.getIngredients()).instructions(dto2.getInstructions())
+                .vegetarian(dto2.isVegetarian()).servings(dto2.getServings()).build();
+
+        when(recipeRepository.saveAll(anyList())).thenReturn(List.of(recipe1, recipe2));
+
+        List<RecipeResponseDTO> result = recipeService.createMoreThanOneRecipe(List.of(dto1, dto2));
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(RecipeResponseDTO::getTitle)
+                .containsExactlyInAnyOrder("Recipe 1", "Recipe 2");
+        verify(recipeRepository).saveAll(anyList());
+    }
+
+    @Test
+    void should_ThrowException_When_BulkInsertFails() {
+        RecipeCreateDTO dto = RecipeCreateDTO.builder()
+                .title("Recipe 1")
+                .description("Desc 1")
+                .ingredients(List.of("Ingredient A"))
+                .instructions("Instr 1")
+                .vegetarian(true)
+                .servings(2)
+                .build();
+
+        when(recipeRepository.saveAll(anyList()))
+                .thenThrow(new RuntimeException("Bulk insert error"));
+
+        assertThatThrownBy(() -> recipeService.createMoreThanOneRecipe(List.of(dto)))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Bulk insert error");
+
+        verify(recipeRepository).saveAll(anyList());
     }
 
     @Test
@@ -237,13 +300,14 @@ class RecipeServiceTest {
     void should_ReturnFilteredRecipes_When_FiltersApplied() {
         Recipe recipe = Recipe.builder().id(1L).title("Vegetarian").vegetarian(true).servings(2).build();
 
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(recipe));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2, null, null, null);
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2, null, null, null, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getTitle()).isEqualTo("Vegetarian");
+        assertThat(result.getContent().get(0).getTitle()).isEqualTo("Vegetarian");
+
     }
 
     @Test
@@ -251,53 +315,57 @@ class RecipeServiceTest {
         Recipe recipe1 = Recipe.builder().id(1L).title("Recipe 1").build();
         Recipe recipe2 = Recipe.builder().id(2L).title("Recipe 2").build();
 
-        when(recipeRepository.findAll(nullable(Specification.class)))
-                .thenReturn(List.of(recipe1, recipe2));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe1, recipe2)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, null, null);
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, null, null, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(2);
         assertThat(result).extracting(RecipeResponseDTO::getId).containsExactlyInAnyOrder(1L, 2L);
-        verify(recipeRepository).findAll(nullable(Specification.class));
+        verify(recipeRepository).findAll(nullable(Specification.class), any(Pageable.class));
     }
 
     @Test
     void should_ReturnRecipes_When_OnlyVegetarianFilterProvided() {
         Recipe recipe = Recipe.builder().id(1L).title("Veg Recipe").vegetarian(true).build();
 
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(recipe));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, null, null, null, null);
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, null, null, null, null, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).isVegetarian()).isTrue();
-        verify(recipeRepository).findAll(any(Specification.class));
+        assertThat(result.getContent().get(0).isVegetarian()).isTrue();
+        verify(recipeRepository).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void should_ReturnRecipes_When_OnlyServingsFilterProvided() {
         Recipe recipe = Recipe.builder().id(1L).title("Recipe with 2 servings").servings(2).build();
 
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(recipe));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, 2, null, null, null);
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, 2, null, null, null, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getServings()).isEqualTo(2);
-        verify(recipeRepository).findAll(any(Specification.class));
+        assertThat(result.getContent().get(0).getServings()).isEqualTo(2);
+        verify(recipeRepository).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void should_ReturnEmptyList_When_NoRecipesMatchFilters() {
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of());
+        Pageable pageable = PageRequest.of(0, 10);
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(true, 2, null, null, null);
+        when(recipeRepository.findAll(any(Specification.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(Collections.emptyList()));
 
-        assertThat(result).isEmpty();
-        verify(recipeRepository).findAll(any(Specification.class));
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(
+                true, 2, null, null, null, pageable
+        );
+
+        assertThat(result.getContent()).isEmpty();
+        verify(recipeRepository).findAll(any(Specification.class), eq(pageable));
     }
 
     @Test
@@ -308,21 +376,21 @@ class RecipeServiceTest {
                 .ingredients(List.of("Tomato", "Pasta", "Salt"))
                 .build();
 
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(recipe));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, List.of("Tomato"), null, null);
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, List.of("Tomato"), null, null, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getTitle()).isEqualTo("Tomato Pasta");
+        assertThat(result.getContent().get(0).getTitle()).isEqualTo("Tomato Pasta");
     }
 
     @Test
     void should_ExcludeRecipes_When_ExcludeIngredientsFilterProvided() {
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of());
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, List.of("Rice"), null);
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, List.of("Rice"), null, PageRequest.of(0, 10));
 
         assertThat(result).isEmpty();
     }
@@ -335,13 +403,13 @@ class RecipeServiceTest {
                 .instructions("Boil water and add pasta.")
                 .build();
 
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(recipe));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, null, "boil");
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(null, null, null, null, "boil", PageRequest.of(0, 10));
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getInstructions()).containsIgnoringCase("boil");
+        assertThat(result.getContent().get(0).getInstructions()).containsIgnoringCase("boil");
     }
 
     @Test
@@ -355,19 +423,21 @@ class RecipeServiceTest {
                 .servings(3)
                 .build();
 
-        when(recipeRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(recipe));
+        when(recipeRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(recipe)));
 
-        List<RecipeResponseDTO> result = recipeService.getRecipesByFilters(
+
+        Page<RecipeResponseDTO> result = recipeService.getRecipesByFilters(
                 true,
                 3,
                 List.of("Tomato"),
                 List.of("Meat"),
-                "cook"
+                "cook",
+                PageRequest.of(0, 10)
         );
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getTitle()).isEqualTo("Veggie Dish");
+        assertThat(result.getContent().get(0).getTitle()).isEqualTo("Veggie Dish");
     }
 
 }

@@ -7,6 +7,8 @@ import com.recime.recipe_api.exception.RecipeNotFoundException;
 import com.recime.recipe_api.model.Recipe;
 import com.recime.recipe_api.repository.RecipeRepository;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -39,7 +41,29 @@ public class RecipeService {
         return mapToResponseDTO(savedRecipe);
     }
 
-    public List<RecipeResponseDTO> getRecipesByFilters(Boolean vegetarian, Integer servings, List<String> includeIngredients, List<String> excludeIngredients, String instruction) {
+    public List<RecipeResponseDTO> createMoreThanOneRecipe(List<RecipeCreateDTO> dtos) {
+        List<Recipe> recipes = dtos.stream().map(dto -> Recipe.builder()
+                        .title(dto.getTitle())
+                        .description(dto.getDescription())
+                        .ingredients(dto.getIngredients())
+                        .instructions(dto.getInstructions())
+                        .vegetarian(dto.isVegetarian())
+                        .servings(dto.getServings())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<Recipe> savedRecipes = recipeRepository.saveAll(recipes);
+        return savedRecipes.stream().map(this::mapToResponseDTO).collect(Collectors.toList());
+    }
+
+    public Page<RecipeResponseDTO> getRecipesByFilters(
+            Boolean vegetarian,
+            Integer servings,
+            List<String> includeIngredients,
+            List<String> excludeIngredients,
+            String instruction,
+            Pageable pageable
+    ) {
         Specification<Recipe> spec = (root, query, cb) -> cb.conjunction();
 
         if (vegetarian != null) {
@@ -62,10 +86,10 @@ public class RecipeService {
             spec = spec.and(hasInstructionContaining(instruction));
         }
 
-        return recipeRepository.findAll(spec).stream()
-                .map(this::mapToResponseDTO)
-                .collect(Collectors.toList());
+        return recipeRepository.findAll(spec, pageable)
+                .map(this::mapToResponseDTO);
     }
+
 
     public RecipeResponseDTO getRecipeById(Long id) {
         Recipe recipe = recipeRepository.findById(id)
